@@ -17,16 +17,19 @@
 
 #include <test/Common.h>
 
+#include <liblangutil/Exceptions.h>
 #include <boost/filesystem.hpp>
+#include <boost/program_options.hpp>
 
 namespace fs = boost::filesystem;
+namespace po = boost::program_options;
 
 namespace dev
 {
 namespace test
 {
 
-boost::filesystem::path getTestPath()
+boost::filesystem::path testPath()
 {
 	if (auto path = getenv("ETH_TEST_PATH"))
 		return path;
@@ -48,6 +51,66 @@ boost::filesystem::path getTestPath()
 	return {};
 }
 
+std::string IPCEnvOrDefaultPath()
+{
+	if (auto path = getenv("ETH_TEST_IPC"))
+		return path;
+
+	if (auto home = getenv("HOME"))
+		return std::string(home) + "/.ethereum/geth.ipc";
+
+	return std::string{};
+}
+
+CommonOptions::CommonOptions(std::string _caption):
+	options(_caption,
+		po::options_description::m_default_line_length,
+		po::options_description::m_default_line_length - 23
+	)
+{
+	options.add_options()
+		("testpath", po::value<fs::path>(&this->testPath)->default_value(dev::test::testPath()), "path to test files")
+		("ipcpath", po::value<fs::path>(&ipcPath)->default_value(IPCEnvOrDefaultPath()), "path to ipc socket")
+		("no-ipc", po::bool_switch(&disableIPC), "disable semantic tests")
+		("no-smt", po::bool_switch(&disableSMT), "disable SMT checker");
+}
+
+void CommonOptions::validate() const
+{
+	solAssert(
+		!testPath.empty(),
+		"No test path specified. The --testpath argument must not be empty when given."
+	);
+	solAssert(
+		fs::exists(testPath),
+		"Invalid test path specified."
+	);
+
+	if (!disableIPC)
+	{
+		solAssert(
+			!ipcPath.empty(),
+			"No ipc path specified. The --ipcpath argument must not be empty when given."
+		);
+		solAssert(
+			fs::exists(ipcPath),
+			"Invalid ipc path specified."
+		);
+	}
+}
+
+bool CommonOptions::parse(int argc, char const* const* argv)
+{
+	po::variables_map arguments;
+
+	po::command_line_parser cmdLineParser(argc, argv);
+	cmdLineParser.options(options);
+	po::store(cmdLineParser.run(), arguments);
+	po::notify(arguments);
+
+	return true;
+}
 
 }
+
 }
